@@ -53,55 +53,63 @@ interface ParseResult {
   sheetName: string;
 }
 
+function detectDayColumn(rows: unknown[][]): number {
+  for (const row of rows) {
+    if (!row) continue;
+    for (let col = 0; col < 5; col++) {
+      const val = row[col];
+      if (typeof val === "number" && Number.isInteger(val) && val >= 1 && val <= 7) {
+        return col;
+      }
+    }
+  }
+  return -1;
+}
+
 export async function parseFlightPlan(file: File): Promise<ParseResult> {
   const buffer = await file.arrayBuffer();
   const wb = XLSX.read(buffer, { type: "array", cellDates: true });
 
-  // Find sheet with day-of-week markers
+  // Pick the FIRST sheet whose rows contain day-of-week markers (1-7)
   let bestSheet: string | null = null;
-  let bestRows: any[][] = [];
-  let bestScore = 0;
+  let dayCol = -1;
+  let rows: any[][] = [];
   for (const name of wb.SheetNames) {
     const ws = wb.Sheets[name];
-    const rows = XLSX.utils.sheet_to_json<any[]>(ws, { header: 1, raw: false, defval: null });
-    let score = 0;
-    for (const r of rows) {
-      const v = r?.[1];
-      if (typeof v === "number" && Number.isInteger(v) && v >= 1 && v <= 7) score++;
-    }
-    if (score > bestScore) {
-      bestScore = score;
+    const sheetRows = XLSX.utils.sheet_to_json<any[]>(ws, { header: 1, defval: null });
+    const col = detectDayColumn(sheetRows);
+    if (col >= 0) {
       bestSheet = name;
-      bestRows = rows;
+      dayCol = col;
+      rows = sheetRows;
+      break;
     }
   }
-  if (!bestSheet) throw new Error("Nenhuma sheet de plano detetada (sem dias 1-7 na coluna B).");
-
-  // Re-read with raw to get Date objects
-  const ws = wb.Sheets[bestSheet];
-  const rows = XLSX.utils.sheet_to_json<any[]>(ws, { header: 1, defval: null });
+  if (!bestSheet || dayCol < 0) {
+    throw new Error("Nenhuma sheet de plano detetada (sem dias 1-7).");
+  }
 
   const flights: CatalogFlight[] = [];
   let currentDay: number | null = null;
 
   for (const r of rows) {
     if (!r) continue;
-    const c1 = r[1];
-    const c2 = r[2];
-    const c3 = r[3];
-    const c8 = r[8];
-    const c9 = r[9];
-    const c10 = r[10];
+    const cDay = r[dayCol];
+    const cFlight = r[dayCol + 1];
+    const cType = r[dayCol + 2];
+    const cStart = r[dayCol + 7];
+    const cEnd = r[dayCol + 8];
+    const cObs = r[dayCol + 9];
 
-    if (typeof c1 === "number" && Number.isInteger(c1) && c1 >= 1 && c1 <= 7) {
-      currentDay = c1;
+    if (typeof cDay === "number" && Number.isInteger(cDay) && cDay >= 1 && cDay <= 7) {
+      currentDay = cDay;
       continue;
     }
     if (currentDay == null) continue;
 
-    if (typeof c2 === "string" && c2.trim() && typeof c3 === "string" && c3.trim()) {
-      const flightNumber = c2.trim();
-      const flightTypeRaw = c3.trim();
+    if (typeof cFlight === "string" && cFlight.trim() && typeof cType === "string" && cType.trim()) {
+      const flightNumber = cFlight.trim();
+      const flightTypeRaw = cType.trim();
       if (!isValidFlightType(flightTypeRaw)) continue;
       const company = detectCompany(flightNumber);
       if (!company) continue;
