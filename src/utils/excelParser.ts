@@ -113,10 +113,10 @@ export async function parseFlightPlan(file: File): Promise<ParseResult> {
       if (!isValidFlightType(flightTypeRaw)) continue;
       const company = detectCompany(flightNumber);
       if (!company) continue;
-      const validStart = toISODate(c8);
+      const validStart = toISODate(cStart);
       if (!validStart) continue;
-      const validEnd = toISODate(c9);
-      const observations = typeof c10 === "string" ? c10 : null;
+      const validEnd = toISODate(cEnd);
+      const observations = typeof cObs === "string" ? cObs : null;
       const subcategory = company === "SATA" ? detectSATASub(observations) : null;
 
       flights.push({
